@@ -7,9 +7,25 @@ class Swift_Server {
 	private $_config;
 	private $_version;
 	private $_current_modules;
+	
+	private $_logger = false;
+	private $_log_debug = false;
 
+	/**
+	 * @param Array $_config The swift configuration array (see documentation for details)
+	 */
 	public function __construct($_config){
 		$this->_config = $_config;
+		
+		if(!empty($_config['logger']) &&
+			is_object($_config['logger']) &&
+			method_exists($_config['logger'], 'log')){
+			
+			$this->_logger = $_config['logger'];
+			$this->_log_debug = $_config['debug_log_enabled'];
+			
+		}
+		
 	}
 
 	public function setCode($code){
@@ -49,7 +65,7 @@ class Swift_Server {
 		$min_serveOptions['minifierOptions']['text/css']['symlinks'] = $min_symlinks;
 
 		
-		if (isset($this->_config['debug_minify_logger'])) {
+		if (isset($this->_config['debug_minify_logger'])) { //@TODO: Deprecate?
 			require_once 'Minify/Logger.php';
 			if (true === $this->_config['debug_minify_logger']) {
 				require_once 'FirePHP.php';
@@ -57,6 +73,9 @@ class Swift_Server {
 			} else {
 				Minify_Logger::setLogger($this->_config['debug_minify_logger']);
 			}
+		} elseif($this->_logger){ //Fall back to generic logger as alternative
+			require_once 'Minify/Logger.php';
+			Minify_Logger::setLogger($this->_logger);
 		}
 		
 
@@ -71,10 +90,19 @@ class Swift_Server {
 		$min_serveOptions['swift']['files'] = array();
 		
 		foreach($this->_current_modules AS $module){
+			
 			if(!empty($this->_config['debug_use_alt_resources']) && !empty($this->_config['modules'][$module]['debug_path'])){
+				
+				$this->log('Using path "'.$this->_config['modules'][$module]['debug_path'].'" for module: "'.$module.'"');
 				$min_serveOptions['swift']['files'][] = $this->_config['modules'][$module]['debug_path'];
+				
 			} else {
+				
+				if(empty($this->_config['modules'][$module]['path'])) throw new Swift_ServerException("No path defined for module {$module}");
+				
+				$this->log('Using path "'.$this->_config['modules'][$module]['path'].'" for module: "'.$module.'"');
 				$min_serveOptions['swift']['files'][] = $this->_config['modules'][$module]['path'];
+				
 			}
 		}
 		
@@ -96,8 +124,16 @@ class Swift_Server {
 		
 		Minify::serve('Swift', $min_serveOptions);
 
-
 	}
+	
+	/////////////////////////////////////////////////////////////////////////////
+	
+	private function log($message){
+		if($this->_logger && $this->_log_debug){
+			$this->_logger->log('Swift: '.((string) $message));
+		}
+	}
+	
 }
 
 require_once 'Minify/Controller/Base.php';
@@ -136,3 +172,6 @@ class Minify_Controller_Swift extends Minify_Controller_Base {
 		return $options;
 	}
 }
+
+
+class Swift_ServerException extends Exception {}
